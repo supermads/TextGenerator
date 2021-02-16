@@ -1,9 +1,9 @@
 import nltk
-from collections import defaultdict
-from collections import Counter
+from collections import defaultdict, Counter
+from random import choice, choices
 
 
-def main():
+def get_freq_dict():
     filename = input()
     with open(filename, "r", encoding="utf-8") as f:
         text = ''.join(f.readlines())
@@ -14,16 +14,26 @@ def main():
             freq_dict[bigram[0]].append(bigram[1])
         for key, value in freq_dict.items():
             freq_dict[key] = Counter(value)
-        head_choice = input()
-        while head_choice != "exit":
-            tails = freq_dict[head_choice]
-            if tails:
-                print(f"Head: {head_choice}")
-                for tail in tails:
-                    print("Tail: {0:<15} Count: {1:<10}".format(tail, tails[tail]))
-            else:
-                print("The requested word is not in the model. Please input another word.")
-            head_choice = input()
+    return freq_dict
+
+
+def generate_sentence(freq_dict):
+    # Choose a random head from freq_dict to begin the sentence
+    sentence = ""
+    head = choice(list(freq_dict.keys()))
+    sentence += head
+    for _i in range(9):
+        tail_options = freq_dict[head]
+        tail_choice = choices(list(tail_options), [tail_options[tail] for tail in tail_options])
+        sentence += f" {tail_choice[0]}"
+        head = tail_choice[0]
+    return sentence
+
+
+def main():
+    freq_dict = get_freq_dict()
+    for _i in range(10):
+        print(generate_sentence(freq_dict))
 
 
 nltk.download('all')
