@@ -1,27 +1,37 @@
 from hstest.stage_test import StageTest
 from hstest.test_case import TestCase
 from hstest.check_result import CheckResult
-from random import randint
+from collections import Counter, defaultdict
+from random import sample
 import re
 
 PATH = "test/corpus.txt"
 
-def preprocess():
+def preprocess() -> dict:
+    # tokenize
     with open(PATH, "r", encoding="utf-8") as f:
         corpus = f.read().split()
-    res = list()
+
+    # create n-grams
+    ngrams = list()
     for i in range(len(corpus) - 1):
-        res.append((corpus[i], corpus[i + 1]))
-    return res
+        ngrams.append((corpus[i], corpus[i + 1]))
+
+    # get frequencies
+    freq = defaultdict(Counter)
+    for head, tail in ngrams:
+        freq[head][tail] += 1
+    return freq
 
 
 class TextGeneratorTests(StageTest):
-    def generate(self):
-        test_input1 = PATH + "\nexit\n"
-        test_input2 = PATH + "\n0\n1\n2\n-1\nten\n43256236577\nexit\n"
-        test_input3 = PATH + "\n" + "\n".join(
-            [str(randint(0, 300000)) for _ in range(10)]) + "\nexit\n"
 
+    def generate(self):
+        with open(PATH, "r", encoding="utf-8") as f:
+            corpus = f.read().split()
+        test_input1 = PATH + "\nKing\nJon\nNight\nKlangenfurt\nexit\n"
+        test_input2 = PATH + "\n" + '\n'.join(sample(corpus, 3)) + "\nexit\n"
+        test_input3 = PATH + "\n" + '\n'.join(sample(corpus, 3)) + "\nNotInCorpus\nexit\n"
         return [
             TestCase(stdin=test_input1, attach=test_input1),
             TestCase(stdin=test_input2, attach=test_input2),
@@ -30,71 +40,46 @@ class TextGeneratorTests(StageTest):
 
     def check(self, reply, attach):
         try:
-            corpus = preprocess()
+            model = preprocess()
         except FileNotFoundError:
             return CheckResult.wrong("File not found at {}. Make sure the file "
                                      "has not been deleted or moved.".format(PATH))
 
-        # check output format
+        # check output
         if not reply:
-            return CheckResult.wrong("The output cannot be empty! Make "
-                                     "sure to output the results of your program!")
+            return CheckResult.wrong("The output cannot be empty! Make sure to output the results of your program!")
 
-        lines = re.split("\n+", reply)
-        if len(lines) < 1:
-            return CheckResult.wrong("The output should consist of at least a line!")
+        entries = reply.split('Head: ')
+        if len(entries) == 1:
+            return CheckResult.wrong("Make sure that every entry starts with the line: 'Head: [head]'")
 
-        stats, res = lines[0:1], lines[1:-1]
+        for entry in entries:
+            lines = entry.split('\n')
 
-        # check corpus statistics
-        try:
-            if (cres := int(stats[0].split()[-1])) != (clen := len(corpus)):
-                if cres > clen:
-                    return CheckResult.wrong(
-                        "The number of outputted tokens is greater then the "
-                        "number of tokens in the corpus. You should tokenize "
-                        "the corpus by whitespaces and leave punctuation marks intact.")
+            # check if the "head" is in the model: if not, it will stay None
+            control = None
+            if lines[0] in model:
+                control = model[lines[0]]
+            results = lines[1:-2]
+            for res in results:
+                if control is not None:
+                    if len(res.split()) != 4:
+                        return CheckResult.wrong(
+                            "Every tail entry should have the format: 'Tail: [tail] Count: [count]'")
+                    tail, count = res.split()[1], res.split()[3]
+                    if tail not in control:
+                        return CheckResult.wrong("Invalid tail: every tail should be part of the entry that corresponds to the given head!!")
+                    try:
+                        if int(count) != control[tail]:
+                            return CheckResult.wrong(
+                                "Incorrect count in model. Make sure that repetitions are recorded as count.")
+                    except ValueError:
+                        return CheckResult.wrong("Count should be castable to int.")
                 else:
-                    return CheckResult.wrong(
-                        "The number of outputted tokens is smaller then "
-                        "the number of tokens in the corpus. You should "
-                        "tokenize the corpus by whitespaces and leave punctuation marks intact.")
-        except IndexError:
-            return CheckResult.wrong("Invalid format. Make sure "
-                                     "'Corpus statistics' is in a valid format.")
-        except ValueError:
-            return CheckResult.wrong("Value error. Make sure that each line in "
-                                     "the corpus statistics section ends with an integer.")
-
-        # see if for every inputted seed there is an output present
-        seeds = attach.split('\n')[1:-2]
-        if len(seeds) != len(res):
-            return CheckResult.wrong("The number of inputted seeds should match "
-                                     "the number of outputted results from the corpus.")
-
-        for j, elem in enumerate(seeds):
-            try:
-                i = int(elem)
-                out_tokens = re.split(r"\s+", res[j])
-                if len(out_tokens) < 4:
-                    return CheckResult.wrong(
-                        "The output should be in the following format: "
-                        "'Head: [head] Tail: [tail]' or it should be an error message")
-                if corpus[i][0] != out_tokens[1] and corpus[i][1] != out_tokens[3]:
-                    return CheckResult.wrong(
-                        "Incorrect output ({0}). An other output ({1}) "
-                        "is expected at index {2}".format(res[i], corpus[i], i))
-            except IndexError:
-                line = re.sub(r'\s', '', res[j].lower())
-                if "indexerror" not in line:
-                    return CheckResult.wrong(
-                        "Error messages should contain the types of "
-                        "errors (Index Error, Type Error, etc.)")
-            except (ValueError, TypeError):
-                line = re.sub(r'\s', '', res[j].lower())
-                if "typerror" not in line:
-                    return CheckResult.wrong("Error messages should contain the "
-                                             "types of errors (Index Error, Type Error, etc.)")
+                    line = re.sub(r'\s', '', res.lower())
+                    if "keyerror" not in line:
+                        return CheckResult.wrong(
+                            "Error messages should contain the types of errors (Index Error, Type Error, Key Error etc.)")
 
         return CheckResult.correct()
 
