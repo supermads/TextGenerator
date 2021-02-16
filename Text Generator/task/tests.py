@@ -18,6 +18,8 @@ class TextGeneratorTests(StageTest):
         ]
 
     def check(self, reply, attach):
+        punct = {".", "?", "!"}
+
         try:
             corpus = preprocess()
         except FileNotFoundError:
@@ -30,20 +32,36 @@ class TextGeneratorTests(StageTest):
             return CheckResult.wrong("You should output exactly 10 sentences! "
                                      "Every sentence should be in a new line.")
 
-        for sent in sentences:
-            if len(sent.split()) != 10:
+        for sentence in sentences:
+            sent = sentence.split()
+            if len(sent) < 5:
                 return CheckResult.wrong(
-                    "Every sentence should contain exactly 10 tokens!")
-            if len(set(sent.split())) == 1:
+                    "A pseudo-sentence should not be shorter than 5 tokens.")
+            if len(set(sent)) == 1:
                 return CheckResult.wrong(
                     "Invalid output. All words of a sentence are identical.")
-            for token in sent.split():
+            if not sent[0][0].isupper():
+                return CheckResult.wrong(
+                    "Every pseudo-sentence should start with a capitalized word.")
+            if sent[0][-1] in punct:
+                return CheckResult.wrong(
+                    "The first token of a pseudo-sentence should not "
+                    "end with sentence-ending punctuation.")
+            if sent[-1][-1] not in punct:
+                return CheckResult.wrong(
+                    "Every pseudo-sentence should end with a "
+                    "sentence-ending punctuation mark.")
+            for i, token in enumerate(sent):
                 if token not in corpus:
-                    return CheckResult.wrong("Sentences should contain "
-                                             "only words from the corpus!")
-
+                    return CheckResult.wrong(
+                        "Sentences should contain only words from the corpus!")
+                if token[-1] in punct and 4 < i+1 < len(sent):
+                    return CheckResult.wrong(
+                        "If a sentence is longer than 5 tokens, it "
+                        "should end at the first sentence ending punctuation.")
         return CheckResult.correct()
 
 
 if __name__ == '__main__':
     TextGeneratorTests('text_generator.text_generator').run_tests()
+
